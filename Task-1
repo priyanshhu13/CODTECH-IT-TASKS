@@ -1,0 +1,73 @@
+import socket
+import requests
+from concurrent.futures import ThreadPoolExecutor
+
+def scan_open_ports(host, ports):
+    open_ports = []
+    def check_port(port):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            if s.connect_ex((host, port)) == 0:
+                open_ports.append(port)
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        executor.map(check_port, ports)
+
+    return open_ports
+
+def check_outdated_software(url):
+    try:
+        response = requests.get(url, timeout=5)
+        server_header = response.headers.get("Server", "Unknown")
+        if server_header != "Unknown":
+            return f"Server software detected: {server_header}. Verify its version for potential vulnerabilities."
+        else:
+            return "No server software information found in headers."
+    except requests.RequestException as e:
+        return f"Error checking outdated software: {e}"
+
+def scan_for_misconfigurations(url):
+    try:
+        response = requests.get(url, timeout=5)
+        headers = response.headers
+        misconfigurations = []
+
+        if "X-Frame-Options" not in headers:
+            misconfigurations.append("Missing X-Frame-Options header (clickjacking protection).")
+        if "X-Content-Type-Options" not in headers:
+            misconfigurations.append("Missing X-Content-Type-Options header (MIME-sniffing protection).")
+        if "Strict-Transport-Security" not in headers:
+            misconfigurations.append("Missing Strict-Transport-Security header (HSTS enforcement).")
+
+        return misconfigurations if misconfigurations else ["No obvious misconfigurations detected."]
+    except requests.RequestException as e:
+        return [f"Error checking misconfigurations: {e}"]
+
+def main():
+    target = input("Enter target (IP or domain): ")
+    scan_type = input("Enter scan type (network/website): ").lower()
+
+    if scan_type == "network":
+        try:
+            ports = range(1, 1025)  # Scans the first 1024 ports
+            print("Scanning open ports...")
+            open_ports = scan_open_ports(target, ports)
+            print(f"Open ports on {target}: {open_ports if open_ports else 'None found.'}")
+        except Exception as e:
+            print(f"Error scanning network: {e}")
+
+    elif scan_type == "website":
+        url = target if target.startswith("http://") or target.startswith("https://") else f"http://{target}"
+        print("Checking for outdated software...")
+        print(check_outdated_software(url))
+
+        print("Checking for common misconfigurations...")
+        misconfigurations = scan_for_misconfigurations(url)
+        for misconfiguration in misconfigurations:
+            print(misconfiguration)
+
+    else:
+        print("Invalid scan type. Choose 'network' or 'website'.")
+
+if __name__ == "__main__":
+    main()
